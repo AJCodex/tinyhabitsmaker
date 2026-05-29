@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore'
 import { AnimatePresence, motion } from 'framer-motion'
 import { db, auth, onAuthStateChanged } from './firebase'
-import { isoDate } from './utils/dates'
+import { isoDate, isEditableDate } from './utils/dates'
 import { seedSampleData } from './utils/seed'
 import Header from './components/Header'
 import Tabs from './components/Tabs'
@@ -118,6 +118,26 @@ export default function App() {
     return map
   }, [completions])
 
+  // On-time completions only (loggedOnTime !== false). Used for streak math.
+  // Legacy docs without the field are treated as on-time so existing stats stay intact.
+  const onTimeByHabit = useMemo(() => {
+    const map = {}
+    for (const c of completions) {
+      if (c.loggedOnTime === false) continue
+      ;(map[c.habitId] ||= new Set()).add(c.date)
+    }
+    return map
+  }, [completions])
+
+  // Set of "habitId|date" pairs that were backfilled (used by heatmap dot).
+  const backfilledKeys = useMemo(() => {
+    const s = new Set()
+    for (const c of completions) {
+      if (c.loggedOnTime === false) s.add(`${c.habitId}|${c.date}`)
+    }
+    return s
+  }, [completions])
+
   const compsByDate = useMemo(() => {
     const map = {}
     for (const c of completions) map[c.date] = (map[c.date] || 0) + 1
@@ -155,19 +175,28 @@ export default function App() {
   }
 
   async function toggleToday(habit) {
+    return toggleDay(habit, isoDate())
+  }
+
+  // Generic toggle for any date. Yesterday allowed for backfill (loggedOnTime=false);
+  // today writes loggedOnTime=true. Older dates are silently rejected.
+  async function toggleDay(habit, dateIso) {
     if (!user) return
-    const today = isoDate()
-    const id = `${habit.id}_${today}`
+    if (!isEditableDate(dateIso)) return
+    const id = `${habit.id}_${dateIso}`
     const ref = doc(db, 'completions', id)
-    const done = compsByHabit[habit.id]?.has(today)
-    if (done) await deleteDoc(ref)
-    else
-      await setDoc(ref, {
-        userId: user.uid,
-        habitId: habit.id,
-        date: today,
-        completedAt: serverTimestamp(),
-      })
+    const done = compsByHabit[habit.id]?.has(dateIso)
+    if (done) {
+      await deleteDoc(ref)
+      return
+    }
+    await setDoc(ref, {
+      userId: user.uid,
+      habitId: habit.id,
+      date: dateIso,
+      completedAt: serverTimestamp(),
+      loggedOnTime: dateIso === isoDate(),
+    })
   }
 
   if (!authReady) {
@@ -217,8 +246,11 @@ export default function App() {
               <DashboardTab
                 habits={habits}
                 compsByHabit={compsByHabit}
+                onTimeByHabit={onTimeByHabit}
                 compsByDate={compsByDate}
+                backfilledKeys={backfilledKeys}
                 totalStars={totalStars}
+                onToggleDay={toggleDay}
               />
             )}
             {activeTab === 'habits' && (

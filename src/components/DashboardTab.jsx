@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { motion } from 'framer-motion'
+import { useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   BarChart,
   Bar,
@@ -9,26 +9,45 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts'
-import { isoDate, currentStreak, longestStreak, lastNDays, heatmapWeeks } from '../utils/dates'
+import {
+  isoDate,
+  yesterdayIso,
+  isEditableDate,
+  currentStreak,
+  longestStreak,
+  lastNDays,
+  heatmapWeeks,
+} from '../utils/dates'
 import { pickMotivation } from '../utils/motivation'
 
-export default function DashboardTab({ habits, compsByHabit, compsByDate, totalStars }) {
+export default function DashboardTab({
+  habits,
+  compsByHabit,
+  onTimeByHabit,
+  compsByDate,
+  backfilledKeys,
+  totalStars,
+  onToggleDay,
+}) {
   const today = isoDate()
   const total = habits.length
   const done = habits.filter((h) => compsByHabit[h.id]?.has(today)).length
 
+  const [editingDate, setEditingDate] = useState(null)
+
   const stats = useMemo(() => {
     let best = 0
     let todayStreakSum = 0
+    const src = onTimeByHabit || compsByHabit
     for (const h of habits) {
-      const set = compsByHabit[h.id] || new Set()
+      const set = src[h.id] || new Set()
       const cur = currentStreak(set)
       todayStreakSum += cur
       const lng = longestStreak(set)
       if (lng > best) best = lng
     }
     return { best, todayStreakSum }
-  }, [habits, compsByHabit])
+  }, [habits, compsByHabit, onTimeByHabit])
 
   const motivation = pickMotivation({
     doneToday: done,
@@ -75,7 +94,24 @@ export default function DashboardTab({ habits, compsByHabit, compsByDate, totalS
         </div>
       </div>
 
-      <Heatmap heat={heat} />
+      <Heatmap
+        heat={heat}
+        backfilledKeys={backfilledKeys}
+        onPickDate={(d) => isEditableDate(d) && setEditingDate(d)}
+      />
+
+      <AnimatePresence>
+        {editingDate && (
+          <BackfillSheet
+            dateIso={editingDate}
+            habits={habits}
+            compsByHabit={compsByHabit}
+            backfilledKeys={backfilledKeys}
+            onToggleDay={onToggleDay}
+            onClose={() => setEditingDate(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -153,7 +189,10 @@ function MotivationCard({ motivation }) {
   )
 }
 
-function Heatmap({ heat }) {
+function Heatmap({ heat, backfilledKeys, onPickDate }) {
+  const yIso = yesterdayIso()
+  const tIso = isoDate()
+
   const shade = (count) => {
     if (!count) return 'bg-gray-100'
     if (count === 1) return 'bg-brand-200'
@@ -161,28 +200,51 @@ function Heatmap({ heat }) {
     if (count === 3) return 'bg-brand-400'
     return 'bg-brand-600'
   }
+
+  const isBackfilledDate = (date) => {
+    if (!backfilledKeys || backfilledKeys.size === 0) return false
+    for (const k of backfilledKeys) {
+      if (k.endsWith(`|${date}`)) return true
+    }
+    return false
+  }
+
   return (
     <div className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-gray-100">
-      <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-400">
-        Last 13 weeks
-      </h3>
+      <div className="mb-3 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400">
+          Last 13 weeks
+        </h3>
+        <p className="text-[10px] text-gray-400">tap yesterday to log missed</p>
+      </div>
       <div className="flex gap-1 overflow-x-auto no-scrollbar">
         {heat.weeks.map((col, wi) => (
           <div key={wi} className="flex flex-col gap-1">
-            {col.map((d, di) => (
-              <motion.div
-                key={d.date}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: d.isFuture ? 0.2 : 1 }}
-                transition={{ delay: (wi * 7 + di) * 0.005 }}
-                title={`${d.date}: ${d.count} done`}
-                className={`h-4 w-4 rounded ${d.isFuture ? 'bg-gray-50' : shade(d.count)}`}
-              />
-            ))}
+            {col.map((d, di) => {
+              const editable = (d.date === tIso || d.date === yIso) && !d.isFuture
+              const backfilled = isBackfilledDate(d.date)
+              return (
+                <motion.button
+                  type="button"
+                  key={d.date}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: d.isFuture ? 0.2 : 1 }}
+                  transition={{ delay: (wi * 7 + di) * 0.005 }}
+                  title={`${d.date}: ${d.count} done${backfilled ? ' (some logged later)' : ''}${editable ? ' · tap to edit' : ''}`}
+                  onClick={() => editable && onPickDate(d.date)}
+                  disabled={!editable}
+                  className={`relative h-4 w-4 rounded ${d.isFuture ? 'bg-gray-50' : shade(d.count)} ${editable ? 'ring-2 ring-purple-300 ring-offset-1 cursor-pointer' : 'cursor-default'}`}
+                >
+                  {backfilled && !d.isFuture && (
+                    <span className="absolute right-0 top-0 block h-1.5 w-1.5 -translate-y-0.5 translate-x-0.5 rounded-full bg-gray-500 ring-1 ring-white" />
+                  )}
+                </motion.button>
+              )
+            })}
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center justify-end gap-1 text-xs text-gray-400">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-1 text-xs text-gray-400">
         <span>less</span>
         <span className="h-3 w-3 rounded bg-gray-100" />
         <span className="h-3 w-3 rounded bg-brand-200" />
@@ -190,7 +252,101 @@ function Heatmap({ heat }) {
         <span className="h-3 w-3 rounded bg-brand-400" />
         <span className="h-3 w-3 rounded bg-brand-600" />
         <span>more</span>
+        <span className="ml-3 inline-flex items-center gap-1">
+          <span className="relative inline-block h-3 w-3 rounded bg-brand-300">
+            <span className="absolute right-0 top-0 block h-1.5 w-1.5 -translate-y-0.5 translate-x-0.5 rounded-full bg-gray-500 ring-1 ring-white" />
+          </span>
+          logged later
+        </span>
       </div>
     </div>
+  )
+}
+
+function BackfillSheet({ dateIso, habits, compsByHabit, backfilledKeys, onToggleDay, onClose }) {
+  const isToday = dateIso === isoDate()
+  const label = isToday ? 'Today' : 'Yesterday'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 40, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 240, damping: 24 }}
+        className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-pop sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-start justify-between">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-gray-400">
+              Log for {label}
+            </div>
+            <div className="text-lg font-bold text-gray-800">{dateIso}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-3 py-1 text-sm text-gray-500 hover:bg-gray-100"
+          >
+            ✕
+          </button>
+        </div>
+
+        {!isToday && (
+          <p className="mb-3 rounded-2xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            💛 Backfills count for history but <strong>don't extend your streak</strong>.
+            Streaks only grow when you check off habits on the same day.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          {habits.length === 0 && (
+            <div className="rounded-2xl bg-gray-50 p-4 text-center text-sm text-gray-500">
+              No habits yet.
+            </div>
+          )}
+          {habits.map((h) => {
+            const done = compsByHabit[h.id]?.has(dateIso)
+            const wasBackfill = backfilledKeys?.has(`${h.id}|${dateIso}`)
+            return (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => onToggleDay(h, dateIso)}
+                className={`flex w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition ${
+                  done
+                    ? 'border-brand-400 bg-brand-50'
+                    : 'border-gray-200 bg-white hover:border-brand-200'
+                }`}
+              >
+                <span className="text-2xl">{h.emoji}</span>
+                <span className="flex-1 font-semibold text-gray-800">{h.name}</span>
+                {done && wasBackfill && (
+                  <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                    logged later
+                  </span>
+                )}
+                <span className="text-xl">{done ? '✅' : '⭕'}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-4 w-full rounded-2xl bg-brand-500 py-3 font-bold text-white shadow-pop hover:bg-brand-600"
+        >
+          Done
+        </button>
+      </motion.div>
+    </motion.div>
   )
 }

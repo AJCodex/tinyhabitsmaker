@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   isoDate,
   addDays,
+  yesterdayIso,
+  isEditableDate,
   currentStreak,
   longestStreak,
   lastNDays,
@@ -61,6 +63,44 @@ describe('addDays', () => {
     const d = new Date('2026-05-15')
     addDays(d, 5)
     expect(isoDate(d)).toBe('2026-05-15')
+  })
+})
+
+describe('yesterdayIso', () => {
+  it('returns the day before today', () => {
+    expect(yesterdayIso()).toBe('2026-05-14')
+  })
+
+  it('handles month boundary', () => {
+    vi.setSystemTime(new Date('2026-06-01T08:00:00'))
+    expect(yesterdayIso()).toBe('2026-05-31')
+  })
+
+  it('handles year boundary', () => {
+    vi.setSystemTime(new Date('2027-01-01T08:00:00'))
+    expect(yesterdayIso()).toBe('2026-12-31')
+  })
+})
+
+describe('isEditableDate', () => {
+  it('accepts today', () => {
+    expect(isEditableDate('2026-05-15')).toBe(true)
+  })
+
+  it('accepts yesterday', () => {
+    expect(isEditableDate('2026-05-14')).toBe(true)
+  })
+
+  it('rejects 2 days ago', () => {
+    expect(isEditableDate('2026-05-13')).toBe(false)
+  })
+
+  it('rejects tomorrow', () => {
+    expect(isEditableDate('2026-05-16')).toBe(false)
+  })
+
+  it('rejects far past dates', () => {
+    expect(isEditableDate('2025-01-01')).toBe(false)
   })
 })
 

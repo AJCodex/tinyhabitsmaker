@@ -12,6 +12,16 @@ export function addDays(d, n) {
   return c
 }
 
+// Yesterday's date in YYYY-MM-DD (local time).
+export function yesterdayIso() {
+  return isoDate(addDays(new Date(), -1))
+}
+
+// True if `dateIso` is editable for backfill purposes (today or yesterday only).
+export function isEditableDate(dateIso) {
+  return dateIso === isoDate() || dateIso === yesterdayIso()
+}
+
 // Compute current streak (consecutive days up to today) for a habit
 // given a Set of completion date strings (YYYY-MM-DD).
 export function currentStreak(completionSet) {

@@ -51,6 +51,7 @@ export async function seedSampleData(userId) {
         habitId: habitRef.id,
         date,
         completedAt: serverTimestamp(),
+        loggedOnTime: true,
       })
     }
   })
