@@ -58,7 +58,7 @@ export default function DashboardTab({
   })
 
   const week = useMemo(() => lastNDays(7, compsByDate), [compsByDate])
-  const heat = useMemo(() => heatmapWeeks(13, compsByDate), [compsByDate])
+  const heat = useMemo(() => heatmapWeeks(10, compsByDate), [compsByDate])
 
   const pct = total === 0 ? 0 : Math.round((done / total) * 100)
 
@@ -209,41 +209,70 @@ function Heatmap({ heat, backfilledKeys, onPickDate }) {
     return false
   }
 
+  // Day-of-month for a YYYY-MM-DD string (no timezone surprises).
+  const dayOfMonth = (iso) => Number(iso.split('-')[2])
+
+  // Day-of-week labels (Sun..Sat) shown as a top header row.
+  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+  // 7-column grid: each row is one week, Sun..Sat left→right, oldest week on top.
+  const rowStyle = { gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }
+
   return (
     <div className="rounded-3xl bg-white p-5 shadow-soft ring-1 ring-gray-100">
       <div className="mb-3 flex items-baseline justify-between">
         <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400">
-          Last 13 weeks
+          Last 10 weeks
         </h3>
         <p className="text-[10px] text-gray-400">tap yesterday to log missed</p>
       </div>
-      <div className="flex gap-1 overflow-x-auto no-scrollbar">
-        {heat.weeks.map((col, wi) => (
-          <div key={wi} className="flex flex-col gap-1">
-            {col.map((d, di) => {
-              const editable = (d.date === tIso || d.date === yIso) && !d.isFuture
-              const backfilled = isBackfilledDate(d.date)
-              return (
-                <motion.button
-                  type="button"
-                  key={d.date}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: d.isFuture ? 0.2 : 1 }}
-                  transition={{ delay: (wi * 7 + di) * 0.005 }}
-                  title={`${d.date}: ${d.count} done${backfilled ? ' (some logged later)' : ''}${editable ? ' · tap to edit' : ''}`}
-                  onClick={() => editable && onPickDate(d.date)}
-                  disabled={!editable}
-                  className={`relative h-4 w-4 rounded ${d.isFuture ? 'bg-gray-50' : shade(d.count)} ${editable ? 'ring-2 ring-purple-300 ring-offset-1 cursor-pointer' : 'cursor-default'}`}
-                >
-                  {backfilled && !d.isFuture && (
-                    <span className="absolute right-0 top-0 block h-1.5 w-1.5 -translate-y-0.5 translate-x-0.5 rounded-full bg-gray-500 ring-1 ring-white" />
-                  )}
-                </motion.button>
-              )
-            })}
-          </div>
-        ))}
+
+      <div className="min-w-0">
+        {/* Day-of-week header */}
+        <div
+          className="mb-1 grid gap-1 text-center text-[10px] font-medium text-gray-400"
+          style={rowStyle}
+        >
+          {dayLabels.map((label) => (
+            <div key={label} className="leading-none">
+              {label}
+            </div>
+          ))}
+        </div>
+
+        {/* Heatmap rows: one row per week, oldest on top → newest at bottom */}
+        <div className="space-y-1">
+          {heat.weeks.map((week, wi) => (
+            <div key={wi} className="grid gap-1" style={rowStyle}>
+              {week.map((d, di) => {
+                const editable = (d.date === tIso || d.date === yIso) && !d.isFuture
+                const backfilled = isBackfilledDate(d.date)
+                const filled = d.count > 0
+                const dayNum = dayOfMonth(d.date)
+                return (
+                  <motion.button
+                    type="button"
+                    key={d.date}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: d.isFuture ? 0.2 : 1 }}
+                    transition={{ delay: (wi * 7 + di) * 0.005 }}
+                    title={`${d.date}: ${d.count} done${backfilled ? ' (some logged later)' : ''}${editable ? ' · tap to edit' : ''}`}
+                    onClick={() => editable && onPickDate(d.date)}
+                    disabled={!editable}
+                    className={`relative flex h-5 w-full items-center justify-center rounded text-[9px] font-semibold leading-none ${d.isFuture ? 'bg-gray-50' : shade(d.count)} ${filled ? 'text-white/70' : 'text-gray-400/70'} ${editable ? 'ring-2 ring-purple-300 ring-offset-1 cursor-pointer' : 'cursor-default'}`}
+                  >
+                    <span className="select-none">{dayNum}</span>
+                    {backfilled && !d.isFuture && (
+                      <span className="absolute right-0 top-0 block h-1.5 w-1.5 -translate-y-0.5 translate-x-0.5 rounded-full bg-gray-500 ring-1 ring-white" />
+                    )}
+                  </motion.button>
+                )
+              })}
+            </div>
+          ))}
+        </div>
       </div>
+
       <div className="mt-3 flex flex-wrap items-center justify-end gap-1 text-xs text-gray-400">
         <span>less</span>
         <span className="h-3 w-3 rounded bg-gray-100" />
